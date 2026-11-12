@@ -5,7 +5,8 @@
     "uniqueDevices": "Appareils uniques sur le projet",
     "uniqueDevicesIn": "Appareils uniques · {period}",
     "windowLabel": "Période",
-    "loadFailed": "Impossible de charger les utilisateurs"
+    "loadFailed": "Impossible de charger les utilisateurs",
+    "noSessionsInPeriod": "Aucune session sur cette période"
   },
   "locale": {
     "en": "English",

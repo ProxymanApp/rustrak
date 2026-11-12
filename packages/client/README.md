@@ -459,6 +459,7 @@ Every method, grouped as it hangs off the client (`client.issues.list(...)`).
 | `sessions.getStats({ path, query? })` | `GET /api/projects/{project_id}/sessions/stats` | Session counts by release, for release health. |
 | `sessions.getSummary({ path, query? })` | `GET /api/projects/{project_id}/sessions/summary` | Totals and crash-free rates for a project's sessions. |
 | `sessions.getTimeseries({ path, query? })` | `GET /api/projects/{project_id}/sessions/timeseries` | Session counts over time, bucketed for a chart. |
+| `sessions.getUsers({ path, query? })` | `GET /api/projects/{project_id}/sessions/users` | Count the distinct users who sent a project sessions. |
 
 ### Settings
 

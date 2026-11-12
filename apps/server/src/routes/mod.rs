@@ -21,6 +21,8 @@ pub mod roles;
 pub mod schedules;
 pub mod sentry_api;
 pub mod sessions;
+// Proxyman: the "Total users" count.
+pub mod session_users;
 pub mod sourcemaps;
 pub mod spans;
 pub mod stats;
@@ -68,6 +70,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
                 .configure(monitors::configure_project)
                 .configure(releases::configure_project)
                 .configure(sessions::configure_project)
+                // Proxyman: the "Total users" count.
+                .configure(session_users::configure_project)
                 .configure(spans::configure_project)
                 .configure(stats::configure_project)
                 .configure(transactions::configure_project),

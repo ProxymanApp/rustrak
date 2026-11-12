@@ -5,7 +5,8 @@
     "uniqueDevices": "Dispozitive unice în proiect",
     "uniqueDevicesIn": "Dispozitive unice · {period}",
     "windowLabel": "Interval",
-    "loadFailed": "Utilizatorii nu au putut fi încărcați"
+    "loadFailed": "Utilizatorii nu au putut fi încărcați",
+    "noSessionsInPeriod": "Nicio sesiune în această perioadă"
   },
   "locale": {
     "en": "English",

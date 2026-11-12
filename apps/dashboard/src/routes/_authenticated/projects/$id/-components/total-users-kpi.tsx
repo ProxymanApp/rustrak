@@ -9,27 +9,21 @@ import { allTimeUsersRead } from './total-users-read';
 /**
  * Proxyman: "Total users" on the overview's KPI row (see PROXYMAN.md).
  *
- * The distinct devices that sent sessions (`SessionSummary.users`). Sentry's
- * Cocoa SDK fills a session's user with the device's installation id when the
- * app sets none, which is why the card counts devices.
+ * The distinct devices that sent sessions. Sentry's Cocoa SDK fills a
+ * session's user with the device's installation id when the app sets none,
+ * which is why the card counts devices.
  *
  * Two modes, all time (the default) and the page's period. Both keep the
  * page's environment and release: only the window differs. With the page on
- * all time the two are the same count, so there is nothing to switch.
+ * all time the two are the same count, so there is nothing to switch. The
+ * all-time count is its own small read (`allTimeUsersRead`); the period's
+ * comes with the session summary the crash-free cards already read.
  *
  * The mode is the card's own, like the issues panel's view: a glance at
- * another number, not a filter, so it stays out of the address.
- *
- * It takes a row of its own under the four cards, and joins their row only
- * from 1700 px: a fifth column any narrower squeezes the crash-free card's
- * sparkline out of its card, and this card's label behind its toggle.
+ * another number, not a filter, so it stays out of the address. Where the
+ * card sits is `KpiRow`'s to decide (its `extra` slot).
  */
 type Mode = 'all' | 'period';
-
-/** Its own row, until the row is wide enough for a fifth card. */
-// The ranges do not overlap: Tailwind emits `min-[...]` before `xl:`.
-const SLOT =
-  'col-span-2 grid xl:max-[1700px]:col-span-4 min-[1700px]:col-span-1';
 
 export function TotalUsersKpi({
   reads,
@@ -51,68 +45,69 @@ export function TotalUsersKpi({
     enabled: !held,
     subscribed: !held,
   });
-  // A failed period read is the row's to show: it replaces every card with
-  // one failure, this one included.
   const inPeriod = useQuery(reads.sessionSummary);
 
   const period = filters.period;
-  const showing = period && mode === 'period' ? inPeriod : allTime;
+  const showingPeriod = period !== undefined && mode === 'period';
+  const showing = showingPeriod ? inPeriod : allTime;
+  const users = showing.data?.users;
+  // Failed only with nothing to show, as the cards beside it: a background
+  // refetch that fails leaves the last count on screen. A failed period read
+  // with nothing cached is the row's to show, which replaces every card.
+  const failed = users === undefined && showing.isError;
 
   // The card appears with the first count to land; until the one it shows
   // is in, its figure is a skeleton rather than the card.
-  if (!allTime.data && !inPeriod.data && !showing.isError) {
-    return (
-      <div className={SLOT}>
-        <KpiPlaceholder />
-      </div>
-    );
+  if (allTime.data === undefined && inPeriod.data === undefined && !failed) {
+    return <KpiPlaceholder />;
   }
 
   let value: ReactNode;
-  if (showing.isError) {
+  if (failed) {
     value = '–';
-  } else if (!showing.data) {
+  } else if (users === undefined) {
     value = <Skeleton className="h-8 w-20" />;
-  } else if (showing.data.total === 0) {
-    // No sessions at all says nothing about users: a dash, as the crash-free
-    // cards show, rather than a zero that reads as a fact.
+  } else if (users === 0) {
+    // No device counted says nothing about users: a dash, as the crash-free
+    // cards show with no sessions, rather than a zero that reads as a fact.
     value = '–';
   } else {
-    value = format.number(showing.data.users);
+    value = format.number(users);
+  }
+
+  let footnote: string;
+  if (failed) {
+    footnote = t('loadFailed');
+  } else if (showingPeriod) {
+    footnote = t('uniqueDevicesIn', {
+      period: overview(`overview.periods.${period}`),
+    });
+  } else {
+    footnote = t('uniqueDevices');
   }
 
   return (
-    <div className={SLOT}>
-      <Kpi
-        label={t('totalUsers')}
-        value={value}
-        delta={
-          period ? (
-            <SegmentedControl
-              aria-label={t('windowLabel')}
-              value={mode}
-              onValueChange={(next) => setMode(next as Mode)}
-              // Held into the label's line, so the card stays the height of
-              // the cards beside it.
-              className="-my-1.5"
-            >
-              <SegmentedItem value="all">
-                {overview('overview.periods.allShort')}
-              </SegmentedItem>
-              <SegmentedItem value="period">{period}</SegmentedItem>
-            </SegmentedControl>
-          ) : null
-        }
-        footnote={
-          showing.isError
-            ? t('loadFailed')
-            : period && mode === 'period'
-              ? t('uniqueDevicesIn', {
-                  period: overview(`overview.periods.${period}`),
-                })
-              : t('uniqueDevices')
-        }
-      />
-    </div>
+    <Kpi
+      label={t('totalUsers')}
+      value={value}
+      delta={
+        period ? (
+          <SegmentedControl
+            aria-label={t('windowLabel')}
+            value={mode}
+            onValueChange={(next) => setMode(next as Mode)}
+            // Held into the label's line, so the card stays the height of
+            // the cards beside it.
+            className="-my-1.5"
+          >
+            <SegmentedItem value="all">
+              {overview('overview.periods.allShort')}
+            </SegmentedItem>
+            <SegmentedItem value="period">{period}</SegmentedItem>
+          </SegmentedControl>
+        ) : null
+      }
+      footnote={footnote}
+    />
   );
 }

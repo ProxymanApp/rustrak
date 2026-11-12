@@ -1,35 +1,28 @@
 //! Proxyman customizations (see PROXYMAN.md at the repository root):
 //! "Remember me for 2 weeks" on the password sign-in, and the distinct-user
-//! count on the project's session summary.
+//! count behind the overview's "Total users" card.
 //!
 //! Kept out of upstream's test files so a merge from upstream never conflicts
-//! with them.
+//! with them. The SSO case lives with upstream's fake provider, at the end of
+//! `sso_flow_test.rs`.
 
-use crate::common::{create_test_project, create_test_token, TestDb};
+use std::collections::HashMap;
+
+use crate::common::{create_test_project, create_test_token, seed_user, token_for, TestDb};
+use actix_session::storage::SessionStore;
 use actix_web::cookie::{time::Duration as CookieDuration, Cookie};
 use actix_web::test;
 use chrono::{Duration, NaiveDate, Utc};
 use rustrak::db::DbPool;
-use rustrak::models::{CreateUserRequest, User, UserRole};
+use rustrak::models::UserRole;
 use rustrak::services::scope::Scope;
 use rustrak::services::session::SessionService;
-use rustrak::services::{AuthSessionService, UsersService};
+use rustrak::services::session_users::SessionUsersService;
+use rustrak::services::{AuthSessionService, DbSessionStore};
 use serde_json::{json, Value};
 
+/// `crate::common::seed_user`'s password.
 const PASSWORD: &str = "password123";
-
-async fn create_user(pool: &DbPool, email: &str) -> User {
-    UsersService::create_user(
-        pool,
-        &CreateUserRequest {
-            email: email.to_string(),
-            password: PASSWORD.to_string(),
-        },
-        UserRole::Member,
-    )
-    .await
-    .expect("create user")
-}
 
 macro_rules! app_service {
     () => {
@@ -41,17 +34,22 @@ macro_rules! app_service {
     };
 }
 
-/// Signs in, ticking "Remember me" or not, and returns the session cookie.
-async fn login(app: &app_service!(), email: &str, remember_me: Option<bool>) -> Cookie<'static> {
-    let mut body = json!({ "email": email, "password": PASSWORD });
-    if let Some(remember_me) = remember_me {
-        body["remember_me"] = json!(remember_me);
-    }
-    let req = test::TestRequest::post()
+/// Signs in with the box ticked or not, from a browser that may already hold
+/// a session, and returns the new session cookie. Unticked without a cookie
+/// is `crate::common::login`.
+async fn sign_in(
+    app: &app_service!(),
+    email: &str,
+    remember_me: bool,
+    holding: Option<&Cookie<'static>>,
+) -> Cookie<'static> {
+    let mut req = test::TestRequest::post()
         .uri("/auth/login")
-        .set_json(body)
-        .to_request();
-    let resp = test::call_service(app, req).await;
+        .set_json(json!({ "email": email, "password": PASSWORD, "remember_me": remember_me }));
+    if let Some(cookie) = holding {
+        req = req.cookie(cookie.clone());
+    }
+    let resp = test::call_service(app, req.to_request()).await;
     assert_eq!(resp.status(), 200, "login as {email}");
     let cookies: Vec<_> = resp.response().cookies().map(|c| c.into_owned()).collect();
     assert_eq!(cookies.len(), 1, "exactly one Set-Cookie: {cookies:?}");
@@ -94,18 +92,25 @@ fn assert_two_weeks(cookie: &Cookie<'_>) {
     assert!(cookie.expires_datetime().is_some(), "and an Expires");
 }
 
+/// A cookie that ends with the browser.
+fn assert_browser_session(cookie: &Cookie<'_>) {
+    assert_eq!(cookie.max_age(), None, "ends with the browser");
+    assert_eq!(cookie.expires(), None);
+}
+
 // ── Remember me ──────────────────────────────────────────────────────────────
 
 #[actix_web::test]
 async fn test_login_without_remember_me_keeps_a_browser_session_cookie() {
     let db = TestDb::new().await;
-    let user = create_user(&db.pool, "plain@example.com").await;
+    let user = seed_user(&db.pool, "plain@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
 
-    for remember_me in [None, Some(false)] {
-        let cookie = login(&app, "plain@example.com", remember_me).await;
-        assert_eq!(cookie.max_age(), None, "ends with the browser");
-        assert_eq!(cookie.expires(), None);
+    // Upstream's sign-in, with no `remember_me` at all, and the box unticked.
+    let absent = crate::common::login(&app, "plain@example.com").await;
+    let unticked = sign_in(&app, "plain@example.com", false, None).await;
+    for cookie in [absent, unticked] {
+        assert_browser_session(&cookie);
         assert_eq!(me_status(&app, &cookie).await, 200);
     }
     assert_eq!(remembered(&db.pool, user.id).await, vec![false, false]);
@@ -114,10 +119,10 @@ async fn test_login_without_remember_me_keeps_a_browser_session_cookie() {
 #[actix_web::test]
 async fn test_login_with_remember_me_sets_a_two_week_cookie() {
     let db = TestDb::new().await;
-    let user = create_user(&db.pool, "remember@example.com").await;
+    let user = seed_user(&db.pool, "remember@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
 
-    let cookie = login(&app, "remember@example.com", Some(true)).await;
+    let cookie = sign_in(&app, "remember@example.com", true, None).await;
     assert_two_weeks(&cookie);
     assert!(cookie.http_only().unwrap_or(false), "still httpOnly");
     assert_eq!(cookie.path(), Some("/"));
@@ -129,12 +134,69 @@ async fn test_login_with_remember_me_sets_a_two_week_cookie() {
     assert_eq!(remembered(&db.pool, user.id).await, vec![true]);
 }
 
+/// The browser's previous session was remembered; this sign-in did not tick
+/// the box. Renewing keeps the old state, so without the reset in
+/// `set_user_session` the new session would inherit the flag.
+#[actix_web::test]
+async fn test_unticked_sign_in_from_a_remembered_browser_is_not_remembered() {
+    let db = TestDb::new().await;
+    let first = seed_user(&db.pool, "first@example.com", UserRole::Member).await;
+    let second = seed_user(&db.pool, "second@example.com", UserRole::Member).await;
+    let app = crate::common::app(&db.pool).await;
+    let remembered_cookie = sign_in(&app, "first@example.com", true, None).await;
+
+    // Someone else at the same browser, and the same person again.
+    let other = sign_in(&app, "second@example.com", false, Some(&remembered_cookie)).await;
+    assert_browser_session(&other);
+    assert_eq!(remembered(&db.pool, second.id).await, vec![false]);
+
+    let again = sign_in(&app, "first@example.com", false, Some(&other)).await;
+    assert_browser_session(&again);
+    // The first sign-in's row was deleted when `other` rotated it.
+    assert_eq!(remembered(&db.pool, first.id).await, vec![false]);
+}
+
+#[actix_web::test]
+async fn test_invitation_sign_up_from_a_remembered_browser_is_not_remembered() {
+    let db = TestDb::new().await;
+    seed_user(&db.pool, "owner@example.com", UserRole::Admin).await;
+    sqlx::query(
+        "INSERT INTO invitations (token, email, role, status, expires_at) \
+         VALUES ($1, $2, 'member', 'pending', $3)",
+    )
+    .bind("proxyman-invite")
+    .bind("invitee@example.com")
+    .bind(Utc::now() + Duration::days(1))
+    .execute(&db.pool)
+    .await
+    .unwrap();
+    let app = crate::common::app(&db.pool).await;
+    let remembered_cookie = sign_in(&app, "owner@example.com", true, None).await;
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/auth/accept-invitation")
+            .cookie(remembered_cookie)
+            .set_json(json!({ "token": "proxyman-invite", "password": "invitee-password" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let cookie = resp.response().cookies().next().unwrap().into_owned();
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_browser_session(&cookie);
+    let invitee = body["user"]["id"].as_i64().unwrap() as i32;
+    assert_eq!(remembered(&db.pool, invitee).await, vec![false]);
+}
+
 #[actix_web::test]
 async fn test_remembered_session_is_not_signed_out_for_being_idle() {
     let db = TestDb::new().await;
-    let user = create_user(&db.pool, "idle-remember@example.com").await;
+    let user = seed_user(&db.pool, "idle-remember@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
-    let cookie = login(&app, "idle-remember@example.com", Some(true)).await;
+    let cookie = sign_in(&app, "idle-remember@example.com", true, None).await;
 
     idle_for(&db.pool, user.id, Duration::days(10)).await;
     assert_eq!(me_status(&app, &cookie).await, 200);
@@ -143,9 +205,9 @@ async fn test_remembered_session_is_not_signed_out_for_being_idle() {
 #[actix_web::test]
 async fn test_unremembered_session_is_still_signed_out_after_a_day_idle() {
     let db = TestDb::new().await;
-    let user = create_user(&db.pool, "idle-plain@example.com").await;
+    let user = seed_user(&db.pool, "idle-plain@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
-    let cookie = login(&app, "idle-plain@example.com", Some(false)).await;
+    let cookie = sign_in(&app, "idle-plain@example.com", false, None).await;
 
     idle_for(&db.pool, user.id, Duration::days(2)).await;
     assert_eq!(me_status(&app, &cookie).await, 401);
@@ -154,9 +216,9 @@ async fn test_unremembered_session_is_still_signed_out_after_a_day_idle() {
 #[actix_web::test]
 async fn test_remembered_session_still_ends_after_two_weeks() {
     let db = TestDb::new().await;
-    let user = create_user(&db.pool, "lifetime@example.com").await;
+    let user = seed_user(&db.pool, "lifetime@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
-    let cookie = login(&app, "lifetime@example.com", Some(true)).await;
+    let cookie = sign_in(&app, "lifetime@example.com", true, None).await;
 
     sqlx::query("UPDATE sessions SET expires_at = $1 WHERE user_id = $2")
         .bind(Utc::now() - Duration::minutes(1))
@@ -170,10 +232,10 @@ async fn test_remembered_session_still_ends_after_two_weeks() {
 #[actix_web::test]
 async fn test_purge_keeps_idle_remembered_sessions() {
     let db = TestDb::new().await;
-    let user = create_user(&db.pool, "purge@example.com").await;
+    let user = seed_user(&db.pool, "purge@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
-    let kept = login(&app, "purge@example.com", Some(true)).await;
-    let purged = login(&app, "purge@example.com", None).await;
+    let kept = sign_in(&app, "purge@example.com", true, None).await;
+    let purged = crate::common::login(&app, "purge@example.com").await;
 
     idle_for(&db.pool, user.id, Duration::days(3)).await;
     let deleted = AuthSessionService::purge_expired(&db.pool).await.unwrap();
@@ -187,9 +249,9 @@ async fn test_purge_keeps_idle_remembered_sessions() {
 #[actix_web::test]
 async fn test_rotated_remembered_session_stays_remembered() {
     let db = TestDb::new().await;
-    let user = create_user(&db.pool, "rotate-remember@example.com").await;
+    let user = seed_user(&db.pool, "rotate-remember@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
-    let cookie = login(&app, "rotate-remember@example.com", Some(true)).await;
+    let cookie = sign_in(&app, "rotate-remember@example.com", true, None).await;
 
     // A new password rotates the session id; the request carries no checkbox.
     let req = test::TestRequest::post()
@@ -208,11 +270,56 @@ async fn test_rotated_remembered_session_stays_remembered() {
 }
 
 #[actix_web::test]
+async fn test_rotated_unremembered_session_stays_unremembered() {
+    let db = TestDb::new().await;
+    let user = seed_user(&db.pool, "rotate-plain@example.com", UserRole::Member).await;
+    let app = crate::common::app(&db.pool).await;
+    let cookie = crate::common::login(&app, "rotate-plain@example.com").await;
+
+    let req = test::TestRequest::post()
+        .uri("/auth/me/password")
+        .cookie(cookie)
+        .set_json(json!({ "current_password": PASSWORD, "new_password": "next-password" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 204);
+    let renewed = resp.response().cookies().next().unwrap().into_owned();
+
+    assert_browser_session(&renewed);
+    assert_eq!(remembered(&db.pool, user.id).await, vec![false]);
+}
+
+/// The column follows the state on every write, not only when a row is made,
+/// so the two cannot disagree when the flag changes without a new id.
+#[actix_web::test]
+async fn test_store_update_keeps_the_column_in_step_with_the_state() {
+    let db = TestDb::new().await;
+    let store = DbSessionStore::new(db.pool.clone());
+    let ttl = CookieDuration::days(1);
+    let column = || async {
+        sqlx::query_scalar::<_, bool>("SELECT remember_me FROM sessions")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap()
+    };
+
+    let key = store.save(HashMap::new(), &ttl).await.unwrap();
+    assert!(!column().await);
+
+    let flagged = HashMap::from([("remember_me".to_string(), "true".to_string())]);
+    let key = store.update(key, flagged, &ttl).await.unwrap();
+    assert!(column().await, "set without a new id");
+
+    store.update(key, HashMap::new(), &ttl).await.unwrap();
+    assert!(!column().await, "and cleared");
+}
+
+#[actix_web::test]
 async fn test_logout_of_a_remembered_session_removes_the_cookie() {
     let db = TestDb::new().await;
-    create_user(&db.pool, "logout-remember@example.com").await;
+    seed_user(&db.pool, "logout-remember@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
-    let cookie = login(&app, "logout-remember@example.com", Some(true)).await;
+    let cookie = sign_in(&app, "logout-remember@example.com", true, None).await;
 
     let req = test::TestRequest::post()
         .uri("/auth/logout")
@@ -230,7 +337,7 @@ async fn test_logout_of_a_remembered_session_removes_the_cookie() {
 #[actix_web::test]
 async fn test_wrong_password_with_remember_me_is_still_refused() {
     let db = TestDb::new().await;
-    create_user(&db.pool, "wrong@example.com").await;
+    seed_user(&db.pool, "wrong@example.com", UserRole::Member).await;
     let app = crate::common::app(&db.pool).await;
 
     let req = test::TestRequest::post()
@@ -244,7 +351,7 @@ async fn test_wrong_password_with_remember_me_is_still_refused() {
 
 // ── Total users ──────────────────────────────────────────────────────────────
 
-async fn seed_user(
+async fn seed_device(
     pool: &DbPool,
     project_id: i32,
     release: &str,
@@ -266,97 +373,104 @@ async fn seed_user(
     .expect("seed session_users");
 }
 
-#[actix_web::test]
-async fn test_summary_counts_each_device_once() {
-    let db = TestDb::new().await;
-    let project_id = create_test_project(&db.pool, "Users Project").await.id;
-    let other_project = create_test_project(&db.pool, "Other Project").await.id;
+/// Four devices in the project over 60 days, and one in another project.
+async fn seed_devices(pool: &DbPool) -> i32 {
+    let project_id = create_test_project(pool, "Users Project").await.id;
+    let other_project = create_test_project(pool, "Other Project").await.id;
     let today = Utc::now().date_naive();
+    let days_ago = |days| today - Duration::days(days);
 
     // The same device across releases, environments and days is one user.
-    seed_user(&db.pool, project_id, "1.0", "prod", today, "device-a").await;
-    seed_user(&db.pool, project_id, "2.0", "prod", today, "device-a").await;
-    seed_user(
-        &db.pool,
-        project_id,
-        "2.0",
-        "beta",
-        today - Duration::days(1),
-        "device-a",
-    )
-    .await;
-    seed_user(&db.pool, project_id, "2.0", "prod", today, "device-b").await;
-    seed_user(
-        &db.pool,
-        project_id,
-        "1.0",
-        "beta",
-        today - Duration::days(2),
-        "device-c",
-    )
-    .await;
+    seed_device(pool, project_id, "1.0", "prod", today, "device-a").await;
+    seed_device(pool, project_id, "2.0", "prod", today, "device-a").await;
+    seed_device(pool, project_id, "2.0", "beta", days_ago(1), "device-a").await;
+    seed_device(pool, project_id, "2.0", "prod", today, "device-b").await;
+    seed_device(pool, project_id, "1.0", "beta", days_ago(2), "device-c").await;
     // Older than any window but all time.
-    seed_user(
-        &db.pool,
-        project_id,
-        "0.9",
-        "prod",
-        today - Duration::days(60),
-        "device-d",
-    )
-    .await;
+    seed_device(pool, project_id, "0.9", "prod", days_ago(60), "device-d").await;
     // Another project's devices are not this one's.
-    seed_user(&db.pool, other_project, "1.0", "prod", today, "device-z").await;
+    seed_device(pool, other_project, "1.0", "prod", today, "device-z").await;
+    project_id
+}
 
-    let all_time = SessionService::project_summary(&db.pool, project_id, None, Scope::default())
-        .await
-        .unwrap();
-    assert_eq!(all_time.users, 4);
+/// The users-only count and the summary's agree, for every scope the card
+/// asks for.
+#[actix_web::test]
+async fn test_both_counts_count_each_device_once() {
+    let db = TestDb::new().await;
+    let project_id = seed_devices(&db.pool).await;
+    let prod = Scope {
+        environment: Some("prod"),
+        release: None,
+    };
+    let release = Scope {
+        environment: None,
+        release: Some("2.0"),
+    };
 
-    let two_weeks =
-        SessionService::project_summary(&db.pool, project_id, Some(14 * 24), Scope::default())
+    for (period, scope, expected, what) in [
+        (None, Scope::default(), 4, "all time"),
+        (Some(14 * 24), Scope::default(), 3, "the window applies"),
+        (None, prod, 3, "the environment filter applies"),
+        (None, release, 2, "the release filter applies"),
+    ] {
+        let users = SessionUsersService::distinct_users(&db.pool, project_id, period, scope)
             .await
             .unwrap();
-    assert_eq!(two_weeks.users, 3, "the window applies");
-
-    let prod = SessionService::project_summary(
-        &db.pool,
-        project_id,
-        None,
-        Scope {
-            environment: Some("prod"),
-            release: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(prod.users, 3, "the environment filter applies");
+        let summary = SessionService::project_summary(&db.pool, project_id, period, scope)
+            .await
+            .unwrap();
+        assert_eq!(users, expected, "{what}");
+        assert_eq!(summary.users, expected, "{what}, in the summary");
+    }
 
     let empty = create_test_project(&db.pool, "No Sessions").await.id;
-    let none = SessionService::project_summary(&db.pool, empty, None, Scope::default())
+    let none = SessionUsersService::distinct_users(&db.pool, empty, None, Scope::default())
         .await
         .unwrap();
-    assert_eq!(none.users, 0);
+    assert_eq!(none, 0);
 }
 
 #[actix_web::test]
-async fn test_summary_endpoint_sends_users() {
+async fn test_users_endpoint_counts_all_time_or_a_window() {
     let db = TestDb::new().await;
-    let project_id = create_test_project(&db.pool, "Users Endpoint").await.id;
+    let project_id = seed_devices(&db.pool).await;
     let token = create_test_token(&db.pool).await;
-    let today = Utc::now().date_naive();
-    seed_user(&db.pool, project_id, "1.0", "prod", today, "device-a").await;
-    seed_user(&db.pool, project_id, "1.0", "prod", today, "device-b").await;
     let app = crate::common::app(&db.pool).await;
 
+    for (query, expected) in [("", 4), ("?period=14d", 3), ("?environment=prod", 3)] {
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/projects/{project_id}/sessions/users{query}"))
+            .insert_header(("Authorization", format!("Bearer {token}")))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200, "{query}");
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body, json!({ "users": expected }), "{query}");
+    }
+
+    // The summary carries the same count, for the card's period mode.
     let req = test::TestRequest::get()
         .uri(&format!(
             "/api/projects/{project_id}/sessions/summary?period=14d"
         ))
         .insert_header(("Authorization", format!("Bearer {token}")))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["users"], 2);
+    let body: Value = test::call_and_read_body_json(&app, req).await;
+    assert_eq!(body["users"], 3);
+}
+
+#[actix_web::test]
+async fn test_users_endpoint_is_hidden_from_people_without_the_project() {
+    let db = TestDb::new().await;
+    let project_id = seed_devices(&db.pool).await;
+    let stranger = seed_user(&db.pool, "stranger@example.com", UserRole::Member).await;
+    let token = token_for(&db.pool, stranger.id).await;
+    let app = crate::common::app(&db.pool).await;
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/projects/{project_id}/sessions/users"))
+        .insert_header(("Authorization", format!("Bearer {token}")))
+        .to_request();
+    assert_eq!(test::call_service(&app, req).await.status(), 404);
 }

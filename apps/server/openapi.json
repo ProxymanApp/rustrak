@@ -10272,6 +10272,77 @@
         ]
       }
     },
+    "/api/projects/{project_id}/sessions/users": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Count the distinct users who sent a project sessions.",
+        "operationId": "sessions.getUsers",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "description": "Time window, e.g. '24h', '7d'. Omit for all time.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "description": "Only sessions from this environment. Omit for every environment.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "description": "Only sessions from this release. Omit for every release.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Distinct users of the project's sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUsers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/projects/{project_id}/spans": {
       "get": {
         "tags": [
@@ -19818,6 +19889,20 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "SessionUsers": {
+        "type": "object",
+        "description": "How many distinct users sent sessions.",
+        "required": [
+          "users"
+        ],
+        "properties": {
+          "users": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Distinct users (the sessions' `did`, which SDKs fill with a device's\ninstallation id when no user is set) seen in the window."
           }
         }
       },

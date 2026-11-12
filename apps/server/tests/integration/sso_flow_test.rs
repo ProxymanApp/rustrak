@@ -1041,3 +1041,75 @@ async fn test_sso_config_says_password_login_is_available_by_default() {
     .await;
     assert_eq!(body["password_login_enabled"], true);
 }
+
+// Proxyman: "Remember me" (src/auth/remember_me.rs, PROXYMAN.md). Starting SSO
+// renews the browser's session, keeping its state; the sign-in it ends in must
+// still start unremembered when that session was a remembered one.
+#[actix_web::test]
+async fn test_proxyman_sso_sign_in_from_a_remembered_browser_is_not_remembered() {
+    let db = TestDb::new().await;
+    create_password_account(&db.pool, "first@example.com").await;
+    let provider = FakeProvider::start(person("sub-2", "second@example.com")).await;
+    let service = OidcService::discover(provider.config()).await.unwrap();
+    let app = rustrak_app(&db.pool, Some(service)).await;
+
+    let login = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/auth/login")
+            .set_json(serde_json::json!({
+                "email": "first@example.com",
+                "password": "password123",
+                "remember_me": true,
+            }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(login.status(), 200);
+    let remembered = session_cookie(&login).expect("signed in");
+    assert!(remembered.max_age().is_some(), "remembered");
+
+    // `start_login`, from the browser that holds the remembered session.
+    let start = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/auth/sso/start")
+            .cookie(remembered)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(start.status(), 200);
+    let cookie = session_cookie(&start).expect("start stores the login protections");
+    let body: Value = test::read_body_json(start).await;
+    let provider_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let redirect = provider_client
+        .get(body["authorization_url"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    let callback_query = redirect.headers()["location"]
+        .to_str()
+        .unwrap()
+        .strip_prefix(&format!("{REDIRECT_URL}?"))
+        .unwrap()
+        .to_string();
+
+    let resp = browser_callback(&app, cookie, &callback_query).await;
+    assert_eq!(resp.status(), 302);
+    let signed_in = session_cookie(&resp).expect("the callback signs the browser in");
+    assert_eq!(signed_in.max_age(), None, "ends with the browser");
+    let me = current_user(&app, signed_in).await.expect("signed in");
+    assert_eq!(me["email"], "second@example.com");
+
+    let flags: Vec<bool> = sqlx::query_scalar(
+        "SELECT remember_me FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.email = $1",
+    )
+    .bind("second@example.com")
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(flags, vec![false]);
+}

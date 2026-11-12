@@ -6,8 +6,11 @@
 //! however idle, and its cookie expires with the session rather than with the
 //! browser.
 //!
-//! - The flag is session state ([`REMEMBER_ME_KEY`]), so it follows the
-//!   session through every rotation (`Session::renew`) the way `user_id` does.
+//! - The flag is session state ([`REMEMBER_ME_KEY`]). Every sign-in clears it
+//!   (`set_user_session` calls [`forget`]), so a session is remembered only
+//!   when its own sign-in asked: renewing keeps state, and an unticked sign-in
+//!   would otherwise inherit the box the browser's previous session ticked.
+//!   A new password, which rotates the id without signing in, keeps it.
 //! - `DbSessionStore` copies it to `sessions.remember_me` when it writes a
 //!   row, and leaves such a row out of the idle checks.
 //! - [`RememberMeCookie`] gives the cookie its expiry, from that row.
@@ -46,6 +49,20 @@ pub fn remember(session: &Session) -> AppResult<()> {
     session
         .insert(REMEMBER_ME_KEY, true)
         .map_err(|e| AppError::Internal(format!("Failed to set session: {e}")))
+}
+
+/// Clears the mark. Every sign-in calls it through `set_user_session`.
+pub fn forget(session: &Session) {
+    session.remove(REMEMBER_ME_KEY);
+}
+
+/// Whether this request's session is a remembered sign-in.
+pub fn is_remembered_session(session: &Session) -> bool {
+    session
+        .get::<bool>(REMEMBER_ME_KEY)
+        .ok()
+        .flatten()
+        .unwrap_or(false)
 }
 
 /// Whether a session's state is a remembered sign-in. Values are JSON, and a
@@ -147,6 +164,10 @@ async fn persist<B>(res: &mut ServiceResponse<B>, config: &RememberMeCookie) -> 
     let mut jar = CookieJar::new();
     jar.add_original(cookie.clone());
     let Some(id) = jar.private(&config.key).get(SESSION_COOKIE) else {
+        // Never expected: actix-session sealed this cookie with the same key
+        // a moment ago. Said rather than skipped, because if its content
+        // security ever changes, remember-me would otherwise stop silently.
+        log::warn!("remember me: the session cookie did not decrypt; left without an expiry");
         return Ok(());
     };
 

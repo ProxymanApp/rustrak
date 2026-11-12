@@ -730,7 +730,13 @@ pub async fn change_password(
         &body.new_password,
     )
     .await?;
+    // Proxyman: a new password is not a new sign-in, so a remembered session
+    // stays remembered under its new id.
+    let remembered = auth::remember_me::is_remembered_session(&session);
     auth::set_user_session(&session, user_id)?;
+    if remembered {
+        auth::remember_me::remember(&session)?;
+    }
     Ok(HttpResponse::NoContent().finish())
 }
 

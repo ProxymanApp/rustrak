@@ -1802,6 +1802,13 @@ export const zSessionTimeseriesPoint = z.object({
 });
 
 /**
+ * How many distinct users sent sessions.
+ */
+export const zSessionUsers = z.object({
+    users: z.int()
+});
+
+/**
  * Everything a user holds.
  */
 export const zSetAccess = z.object({
@@ -3839,6 +3846,21 @@ export const zSessionsGetTimeseriesQuery = z.object({
  * Time-bucketed session trend, project-wide
  */
 export const zSessionsGetTimeseriesResponse = z.array(zSessionTimeseriesPoint);
+
+export const zSessionsGetUsersPath = z.object({
+    project_id: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' })
+});
+
+export const zSessionsGetUsersQuery = z.object({
+    period: z.string().optional(),
+    environment: z.string().optional(),
+    release: z.string().optional()
+});
+
+/**
+ * Distinct users of the project's sessions
+ */
+export const zSessionsGetUsersResponse = zSessionUsers;
 
 export const zSpansListPath = z.object({
     project_id: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' })

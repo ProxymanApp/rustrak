@@ -165,13 +165,18 @@ impl SessionStore for DbSessionStore {
     ) -> Result<SessionKey, UpdateError> {
         let data =
             serde_json::to_string(&state).map_err(|e| UpdateError::Serialization(e.into()))?;
-        sqlx::query("UPDATE sessions SET data = $1, user_id = $2 WHERE id_hash = $3")
-            .bind(data)
-            .bind(user_id(&state))
-            .bind(hash(key.as_ref()))
-            .execute(&self.pool)
-            .await
-            .map_err(|e| UpdateError::Other(e.into()))?;
+        // Proxyman: `remember_me` follows the state here too, so the column
+        // and the flag cannot disagree (src/auth/remember_me.rs).
+        sqlx::query(
+            "UPDATE sessions SET data = $1, user_id = $2, remember_me = $4 WHERE id_hash = $3",
+        )
+        .bind(data)
+        .bind(user_id(&state))
+        .bind(hash(key.as_ref()))
+        .bind(crate::auth::remember_me::is_remembered(&state))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| UpdateError::Other(e.into()))?;
         Ok(key)
     }
 

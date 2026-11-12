@@ -25,51 +25,71 @@ the session for the store's full 14-day lifetime however idle, and gives the
 cookie the same expiry, so a browser restart does not sign out either.
 Unticked, sign-in is exactly upstream's.
 
-- The flag is session state (`remember_me`), so it follows the session through
-  every id rotation (a new password, for one).
-- The store copies it to `sessions.remember_me` and skips the idle checks for
-  such a row; the 14-day absolute lifetime still applies.
+- The flag is session state (`remember_me`). **Every sign-in clears it**
+  (`set_user_session` calls `remember_me::forget`), and `login` sets it again
+  only when the box is ticked. Renewing a session keeps its state, so without
+  that reset an unticked, SSO or invitation sign-in on a browser that still
+  held a remembered session would inherit it. A new password rotates the id
+  without signing in, so `change_password` carries the flag across.
+- The store writes the flag to `sessions.remember_me` on every write (`save`
+  and `update`) and skips the idle checks for such a row. The 14-day absolute
+  lifetime still applies.
 - `RememberMeCookie`, a middleware wrapped outside actix-session's, gives the
   cookie `Max-Age` and `Expires` from that row whenever the session cookie is
-  set.
-- Password sign-in only. SSO sign-ins keep upstream's behaviour.
+  set. A cookie it cannot decrypt is logged, not skipped quietly.
+- The checkbox is on the password form only; SSO sign-ins are never
+  remembered.
 
 | | Files |
 |---|---|
 | New | `apps/server/src/auth/remember_me.rs`, `apps/server/migrations/{sqlite,postgres}/20261112173000_proxyman_session_remember_me.*`, `apps/dashboard/src/routes/-components/remember-me-field.tsx` |
-| Touched | `apps/server/src/auth/mod.rs`, `apps/server/src/app.rs` (the `.wrap`), `apps/server/src/services/auth_session.rs` (load, purge, save), `apps/server/src/models/user.rs` (`LoginRequest.remember_me`), `apps/server/src/routes/auth.rs` (`login`), `apps/dashboard/src/routes/-components/login-form.tsx` |
+| Touched | `apps/server/src/auth/mod.rs`, `apps/server/src/auth/session.rs` (`set_user_session` clears the flag), `apps/server/src/app.rs` (the `.wrap`), `apps/server/src/services/auth_session.rs` (load, purge, save, update), `apps/server/src/models/user.rs` (`LoginRequest.remember_me`), `apps/server/src/routes/auth.rs` (`login`, `change_password`), `apps/dashboard/src/routes/-components/login-form.tsx` |
 
 ### 2. "Total users" on the project overview
 
 A KPI card on the overview: the distinct devices that sent sessions (the
 sessions' `did`; Sentry's Cocoa SDK fills it with the installation id when the
-app sets no user). The session summary already counted those users for the
-crash-free rate; it now also returns the count (`SessionSummary.users`).
+app sets no user).
 
 - **Two modes**, switched on the card: **All** (the default, the project's
   total) and the page's period (`14d` and so on). Both keep the page's
   environment and release filters; only the window differs. With the page on
   *All time* the two are the same count and the switch is hidden.
-- The all-time count is the session summary with no `period`. The loader
-  starts it with the page's other reads. It counts every `session_users` row of
-  the project, which is what the page already does when *All time* is picked.
+- **The period count** comes with the session summary the crash-free cards
+  already read: it counted those users for the crash-free rate and now also
+  returns them (`SessionSummary.users`).
+- **The all-time count** is its own endpoint,
+  `GET /api/projects/{id}/sessions/users` (`client.sessions.getUsers`). It
+  counts `session_users` only, so the card's default does not also sum every
+  `session_counts` bucket the project has. The loader starts it with the
+  page's other reads.
+- **No index for it, on purpose.** One on `(project_id, did)` makes the
+  all-time count about 13× faster, but SQLite's planner then picks it for
+  windowed counts too, upstream's summary among them, and those got about 8×
+  slower in a 2M-row test.
+- With the page on a period that has no sessions, the crash-free note says
+  "No sessions in this period" rather than upstream's "No sessions yet",
+  because the card beside it may be counting all time.
 - **Layout**: a row of its own under the four upstream cards, joining their
   row as a fifth card only from 1700 px wide. Any narrower, five columns push
   the crash-free sessions sparkline out of its card.
 
 | | Files |
 |---|---|
-| New | `apps/dashboard/src/routes/_authenticated/projects/$id/-components/total-users-kpi.tsx`, `…/-components/total-users-read.ts` |
-| Touched | `apps/server/src/models/session.rs`, `apps/server/src/services/session.rs`, `apps/dashboard/src/routes/_authenticated/projects/$id/-components/overview-panels.tsx` (exports `Kpi` and `KpiPlaceholder`, an `extra` slot on `KpiRow`, five columns from 1700 px), `apps/dashboard/src/routes/_authenticated/projects/$id/index.tsx` (the card, and the all-time read in the loader) |
+| New | `apps/server/src/services/session_users.rs`, `apps/server/src/routes/session_users.rs`, `apps/dashboard/src/routes/_authenticated/projects/$id/-components/total-users-kpi.tsx`, `…/-components/total-users-read.ts` |
+| Touched | `apps/server/src/models/session.rs`, `apps/server/src/services/session.rs`, `apps/server/src/services/mod.rs`, `apps/server/src/routes/mod.rs`, `apps/server/src/openapi.rs`, `apps/dashboard/src/features/release/api/queries.ts` (`sessionUsers`), `apps/dashboard/src/routes/_authenticated/projects/$id/-components/overview-panels.tsx` (exports `Kpi` and `KpiPlaceholder`; the `extra` slot on `KpiRow` with its layout, `ROW_WITH_EXTRA` and `EXTRA_SLOT`; the note's window wording), `apps/dashboard/src/routes/_authenticated/projects/$id/index.tsx` (the card, and the all-time read in the loader) |
 
 ### Shared by both
 
 - Copy: a top-level `proxyman` namespace at the top of each
   `apps/dashboard/src/shared/i18n/messages/*.json` (all five locales).
 - Tests: `apps/server/tests/integration/proxyman_test.rs`, registered with one
-  line in `tests/integration/mod.rs`.
-- Generated: `apps/server/openapi.json` and
-  `packages/client/src/generated/*` carry the two new fields.
+  line in `tests/integration/mod.rs`, and one SSO test appended to the end of
+  `tests/integration/sso_flow_test.rs` (it needs that file's fake provider).
+- Generated: `apps/server/openapi.json`, `packages/client/src/generated/*`, and
+  the API reference in `packages/client/README.md` and
+  `apps/docs/content/sdks/client.mdx` carry the new fields and the new
+  endpoint.
 
 ## Merging from upstream
 
@@ -82,7 +102,8 @@ git merge upstream/main
 
 When it conflicts:
 
-- **Generated files** (`openapi.json`, `packages/client/src/generated/*`):
+- **Generated files** (`openapi.json`, `packages/client/src/generated/*`, and
+  the API reference in the client README and docs):
   take upstream's version, then regenerate rather than merging by hand:
   ```bash
   (cd apps/server && cargo run --bin gen_openapi --features openapi)

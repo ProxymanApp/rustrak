@@ -5,7 +5,8 @@
     "uniqueDevices": "Unique devices across the project",
     "uniqueDevicesIn": "Unique devices · {period}",
     "windowLabel": "Time window",
-    "loadFailed": "Could not load users"
+    "loadFailed": "Could not load users",
+    "noSessionsInPeriod": "No sessions in this period"
   },
   "locale": {
     "en": "English",

@@ -12,6 +12,8 @@ import type {
   ReleasesNewIssuesData,
   SessionsGetSummaryData,
   SessionsGetTimeseriesData,
+  // Proxyman: the "Total users" count.
+  SessionsGetUsersData,
 } from '@rustrak/client';
 import { queryOptions } from '@tanstack/react-query';
 import { projectScope } from '@/shared/api/keys';
@@ -23,6 +25,8 @@ type ReleaseQuery = NonNullable<ReleasesGetData['query']>;
 type NewIssuesQuery = NonNullable<ReleasesNewIssuesData['query']>;
 type SessionSummaryQuery = NonNullable<SessionsGetSummaryData['query']>;
 type SessionTimeseriesQuery = NonNullable<SessionsGetTimeseriesData['query']>;
+// Proxyman: the "Total users" count.
+type SessionUsersQuery = NonNullable<SessionsGetUsersData['query']>;
 
 /** Page size used when walking every row of a single release. */
 const RELEASE_ROWS_PER_PAGE = 100;
@@ -171,6 +175,24 @@ export const releaseQueries = {
       queryFn: ({ signal }) =>
         orThrow(
           api().sessions.getTimeseries({
+            path: { project_id: projectId },
+            query,
+            signal,
+          }),
+        ),
+    }),
+  /**
+   * Proxyman: the distinct users of a project's sessions, for the overview's
+   * "Total users" card (see PROXYMAN.md). The summary carries the same count;
+   * this read is only that count, so its all-time default does not also sum
+   * every session bucket the project has.
+   */
+  sessionUsers: (projectId: number, query: SessionUsersQuery) =>
+    queryOptions({
+      queryKey: [...releaseQueries.all(projectId), 'sessions', 'users', query],
+      queryFn: ({ signal }) =>
+        orThrow(
+          api().sessions.getUsers({
             path: { project_id: projectId },
             query,
             signal,

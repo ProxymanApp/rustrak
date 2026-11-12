@@ -116,6 +116,8 @@ impl Modify for SecurityAddon {
         crate::routes::sessions::get_stats,
         crate::routes::sessions::get_summary,
         crate::routes::sessions::get_timeseries,
+        // Proxyman: the "Total users" count.
+        crate::routes::session_users::get_users,
         crate::routes::stats::get_event_timeseries,
         crate::routes::stats::get_stats_summary,
         crate::routes::releases::list_releases,
@@ -346,6 +348,8 @@ impl Modify for SecurityAddon {
         crate::models::session::ReleaseHealthRow,
         crate::models::session::SessionTimeseriesPoint,
         crate::models::session::SessionSummary,
+        // Proxyman: the "Total users" count.
+        crate::routes::session_users::SessionUsers,
         crate::models::stats::EventTimeseriesPoint,
         crate::models::stats::MetricDelta,
         crate::models::stats::ProjectStatsSummary,
