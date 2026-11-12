@@ -2,7 +2,10 @@
   "proxyman": {
     "rememberMe": "Recordarme durante 2 semanas",
     "totalUsers": "Usuarios totales",
-    "uniqueDevices": "Dispositivos únicos en el proyecto"
+    "uniqueDevices": "Dispositivos únicos en el proyecto",
+    "uniqueDevicesIn": "Dispositivos únicos · {period}",
+    "windowLabel": "Periodo",
+    "loadFailed": "No se pudieron cargar los usuarios"
   },
   "locale": {
     "en": "English",

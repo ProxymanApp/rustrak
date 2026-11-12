@@ -41,18 +41,26 @@ Unticked, sign-in is exactly upstream's.
 
 ### 2. "Total users" on the project overview
 
-A fifth card on the overview's KPI row: the distinct devices that sent
-sessions (the sessions' `did`; Sentry's Cocoa SDK fills it with the
-installation id when the app sets no user). It follows the page's period,
-environment and release filters like every other card, so **All time** is the
-project's total. It costs no extra query: the session summary already counted
-those users for the crash-free rate, and now also returns the count
-(`SessionSummary.users`).
+A KPI card on the overview: the distinct devices that sent sessions (the
+sessions' `did`; Sentry's Cocoa SDK fills it with the installation id when the
+app sets no user). The session summary already counted those users for the
+crash-free rate; it now also returns the count (`SessionSummary.users`).
+
+- **Two modes**, switched on the card: **All** (the default, the project's
+  total) and the page's period (`14d` and so on). Both keep the page's
+  environment and release filters; only the window differs. With the page on
+  *All time* the two are the same count and the switch is hidden.
+- The all-time count is the session summary with no `period`. The loader
+  starts it with the page's other reads. It counts every `session_users` row of
+  the project, which is what the page already does when *All time* is picked.
+- **Layout**: a row of its own under the four upstream cards, joining their
+  row as a fifth card only from 1700 px wide. Any narrower, five columns push
+  the crash-free sessions sparkline out of its card.
 
 | | Files |
 |---|---|
-| New | `apps/dashboard/src/routes/_authenticated/projects/$id/-components/total-users-kpi.tsx` |
-| Touched | `apps/server/src/models/session.rs`, `apps/server/src/services/session.rs`, `apps/dashboard/src/routes/_authenticated/projects/$id/-components/overview-panels.tsx` (exports `Kpi` and `KpiPlaceholder`, an `extra` slot on `KpiRow`, five columns), `apps/dashboard/src/routes/_authenticated/projects/$id/index.tsx` |
+| New | `apps/dashboard/src/routes/_authenticated/projects/$id/-components/total-users-kpi.tsx`, `…/-components/total-users-read.ts` |
+| Touched | `apps/server/src/models/session.rs`, `apps/server/src/services/session.rs`, `apps/dashboard/src/routes/_authenticated/projects/$id/-components/overview-panels.tsx` (exports `Kpi` and `KpiPlaceholder`, an `extra` slot on `KpiRow`, five columns from 1700 px), `apps/dashboard/src/routes/_authenticated/projects/$id/index.tsx` (the card, and the all-time read in the loader) |
 
 ### Shared by both
 

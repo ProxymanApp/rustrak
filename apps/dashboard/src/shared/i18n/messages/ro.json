@@ -2,7 +2,10 @@
   "proxyman": {
     "rememberMe": "Ține-mă minte 2 săptămâni",
     "totalUsers": "Total utilizatori",
-    "uniqueDevices": "Dispozitive unice în proiect"
+    "uniqueDevices": "Dispozitive unice în proiect",
+    "uniqueDevicesIn": "Dispozitive unice · {period}",
+    "windowLabel": "Interval",
+    "loadFailed": "Utilizatorii nu au putut fi încărcați"
   },
   "locale": {
     "en": "English",

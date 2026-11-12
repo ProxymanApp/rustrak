@@ -2,7 +2,10 @@
   "proxyman": {
     "rememberMe": "记住我 2 周",
     "totalUsers": "总用户数",
-    "uniqueDevices": "项目中的唯一设备数"
+    "uniqueDevices": "项目中的唯一设备数",
+    "uniqueDevicesIn": "唯一设备 · {period}",
+    "windowLabel": "时间范围",
+    "loadFailed": "无法加载用户数"
   },
   "locale": {
     "en": "English",

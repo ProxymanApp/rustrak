@@ -131,8 +131,9 @@ export function KpiRow({
   }
 
   return (
-    // Proxyman: five columns, for `extra`'s card.
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
+    // Proxyman: five across only where five fit (`total-users-kpi.tsx`).
+    // The ranges do not overlap: Tailwind emits `min-[...]` before `xl:`.
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:max-[1700px]:grid-cols-4 min-[1700px]:grid-cols-5">
       {summary.data ? (
         <>
           <Kpi
