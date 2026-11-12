@@ -1,4 +1,9 @@
 {
+  "proxyman": {
+    "rememberMe": "Remember me for 2 weeks",
+    "totalUsers": "Total users",
+    "uniqueDevices": "Unique devices across the project"
+  },
   "locale": {
     "en": "English",
     "zh": "简体中文",

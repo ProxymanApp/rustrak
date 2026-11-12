@@ -1365,6 +1365,12 @@ export type LogVolumePoint = {
 export type LoginRequest = {
     email: string;
     password: string;
+    /**
+     * Keep this session signed in for two weeks, however idle and across
+     * browser restarts. Off by default: the session then ends after a day
+     * without a request, or when the browser closes.
+     */
+    remember_me?: boolean;
 };
 
 export type ManifestRequest = {
@@ -2268,6 +2274,11 @@ export type SessionSummary = {
     crashed: number;
     errored: number;
     total: number;
+    /**
+     * Distinct users (the sessions' `did`, which SDKs fill with a device's
+     * installation id when no user is set) seen in the window.
+     */
+    users: number;
 };
 
 /**

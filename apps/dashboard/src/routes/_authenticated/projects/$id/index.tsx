@@ -26,6 +26,8 @@ import {
   heldReads,
   overviewReads,
 } from './-components/overview-reads';
+// Proxyman: the "Total users" card.
+import { TotalUsersKpi } from './-components/total-users-kpi';
 
 interface OverviewSearch {
   period?: PeriodChoice;
@@ -167,7 +169,11 @@ function ProjectScreen({ project }: { project?: ProjectResponse }) {
       />
 
       <Page className="max-lg:flex-none max-lg:overflow-visible">
-        <KpiRow reads={reads} filters={filters} />
+        <KpiRow
+          reads={reads}
+          filters={filters}
+          extra={<TotalUsersKpi reads={reads} />}
+        />
 
         {/* min-w-0 on every cell holding a chart: a grid item defaults to
             min-width:auto, so a chart's measured width can pin its column

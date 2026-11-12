@@ -35,7 +35,8 @@ fn touch_interval() -> Duration {
     Duration::minutes(1)
 }
 
-fn hash(id: &str) -> String {
+// Proxyman: `pub(crate)` for src/auth/remember_me.rs.
+pub(crate) fn hash(id: &str) -> String {
     hex::encode(Sha256::digest(id.as_bytes()))
 }
 
@@ -67,11 +68,15 @@ impl AuthSessionService {
     /// or idle too long.
     pub async fn purge_expired(pool: &DbPool) -> AppResult<u64> {
         let now = Utc::now();
-        let done = sqlx::query("DELETE FROM sessions WHERE expires_at <= $1 OR last_seen_at <= $2")
-            .bind(now)
-            .bind(now - idle_timeout())
-            .execute(pool)
-            .await?;
+        // Proxyman: a remembered session is never idle too long.
+        let done = sqlx::query(
+            "DELETE FROM sessions WHERE expires_at <= $1 \
+             OR (last_seen_at <= $2 AND NOT remember_me)",
+        )
+        .bind(now)
+        .bind(now - idle_timeout())
+        .execute(pool)
+        .await?;
         Ok(done.rows_affected())
     }
 }
@@ -91,9 +96,10 @@ impl SessionStore for DbSessionStore {
     async fn load(&self, key: &SessionKey) -> Result<Option<HashMap<String, String>>, LoadError> {
         let now = Utc::now();
         let id_hash = hash(key.as_ref());
+        // Proxyman: a remembered session is never idle too long.
         let row: Option<(String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT data, last_seen_at FROM sessions \
-             WHERE id_hash = $1 AND expires_at > $2 AND last_seen_at > $3",
+             WHERE id_hash = $1 AND expires_at > $2 AND (remember_me OR last_seen_at > $3)",
         )
         .bind(&id_hash)
         .bind(now)
@@ -130,15 +136,18 @@ impl SessionStore for DbSessionStore {
         let id = hex::encode(bytes);
         let data = serde_json::to_string(&state).map_err(|e| SaveError::Serialization(e.into()))?;
         let now = Utc::now();
+        // Proxyman: `remember_me` (src/auth/remember_me.rs).
         sqlx::query(
-            "INSERT INTO sessions (id_hash, user_id, data, created_at, last_seen_at, expires_at) \
-             VALUES ($1, $2, $3, $4, $4, $5)",
+            "INSERT INTO sessions \
+             (id_hash, user_id, data, created_at, last_seen_at, expires_at, remember_me) \
+             VALUES ($1, $2, $3, $4, $4, $5, $6)",
         )
         .bind(hash(&id))
         .bind(user_id(&state))
         .bind(data)
         .bind(now)
         .bind(now + absolute_lifetime())
+        .bind(crate::auth::remember_me::is_remembered(&state))
         .execute(&self.pool)
         .await
         .map_err(|e| SaveError::Other(e.into()))?;

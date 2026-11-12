@@ -121,6 +121,7 @@ impl SessionService {
             crash_free_sessions_rate: crash_free_rate(crashed, total),
             crash_free_users_rate: crash_free_rate(crashed_users, users),
             active_releases,
+            users,
         })
     }
 

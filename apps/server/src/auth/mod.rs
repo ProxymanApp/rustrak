@@ -1,5 +1,7 @@
 pub mod extractors;
 pub mod oidc;
+// Proxyman: "Remember me for 2 weeks".
+pub mod remember_me;
 pub mod sentry_auth;
 pub mod session;
 

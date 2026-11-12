@@ -39,7 +39,8 @@ import { TransactionP95Bars } from './transaction-p95-bars';
  * could say while wrong.
  */
 /** One headline figure, how it moved, and its shape over the window. */
-function Kpi({
+// Proxyman: exported for `total-users-kpi.tsx`.
+export function Kpi({
   label,
   value,
   delta,
@@ -68,7 +69,8 @@ function Kpi({
   );
 }
 
-function KpiPlaceholder() {
+// Proxyman: exported for `total-users-kpi.tsx`.
+export function KpiPlaceholder() {
   return (
     <div className="h-[7.25rem] animate-pulse rounded-2xl border border-border-subtle bg-surface motion-reduce:animate-none" />
   );
@@ -93,9 +95,12 @@ function NoSessionsNote() {
 export function KpiRow({
   reads,
   filters,
+  extra,
 }: {
   reads: OverviewReads;
   filters: OverviewFilters;
+  /** Proxyman: cards appended to the row (`TotalUsersKpi`). */
+  extra?: ReactNode;
 }) {
   const t = useTranslations('projectPages.overview');
   const format = useFormatter();
@@ -126,7 +131,8 @@ export function KpiRow({
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+    // Proxyman: five columns, for `extra`'s card.
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
       {summary.data ? (
         <>
           <Kpi
@@ -198,6 +204,7 @@ export function KpiRow({
           <KpiPlaceholder />
         </>
       )}
+      {extra}
     </div>
   );
 }

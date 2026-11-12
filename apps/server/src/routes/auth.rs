@@ -266,6 +266,10 @@ pub async fn login(
 
     // Set session
     auth::set_user_session(&session, user.id)?;
+    // Proxyman: "Remember me for 2 weeks".
+    if req.remember_me {
+        auth::remember_me::remember(&session)?;
+    }
 
     Ok(HttpResponse::Ok().json(AuthResponse { user: user.into() }))
 }

@@ -305,6 +305,12 @@ pub fn app(
             .cookie_same_site(actix_web::cookie::SameSite::Lax)
             .build(),
         )
+        // Proxyman: outside the session middleware, so it sees the cookie
+        // that one sets and can give a remembered session's an expiry.
+        .wrap(crate::auth::remember_me::RememberMeCookie::new(
+            state.pool.get_ref().clone(),
+            state.config.security.session_key.clone(),
+        ))
         .configure(crate::routes::configure);
 
     #[cfg(feature = "openapi")]

@@ -146,6 +146,10 @@ pub struct SessionSummary {
     #[cfg_attr(feature = "openapi", schema(required))]
     pub crash_free_users_rate: Option<f64>,
     pub active_releases: i64,
+    /// Distinct users (the sessions' `did`, which SDKs fill with a device's
+    /// installation id when no user is set) seen in the window.
+    // Proxyman: the overview's "Total users" card.
+    pub users: i64,
 }
 
 /// One time-bucketed point in a project's session trend, aggregated across all

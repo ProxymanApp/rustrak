@@ -1,4 +1,9 @@
 {
+  "proxyman": {
+    "rememberMe": "记住我 2 周",
+    "totalUsers": "总用户数",
+    "uniqueDevices": "项目中的唯一设备数"
+  },
   "locale": {
     "en": "English",
     "zh": "简体中文",

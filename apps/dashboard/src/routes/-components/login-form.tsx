@@ -15,10 +15,14 @@ import { userMutations } from '@/features/user/api/mutations';
 import { setServerErrors } from '@/shared/lib/form-errors';
 import { revalidateLogic, useAppForm } from '@/shared/ui/components/app-form';
 import { useRouter } from '@/shared/ui/hooks/use-router';
+// Proxyman: "Remember me for 2 weeks".
+import { RememberMeField } from './remember-me-field';
 
 type LoginFormData = {
   email: string;
   password: string;
+  // Proxyman: "Remember me for 2 weeks".
+  remember_me: boolean;
 };
 
 type LoginTranslator = ReturnType<typeof useTranslations<'auth'>>;
@@ -168,10 +172,16 @@ export function LoginForm({
   const loginSchema = z.object({
     email: z.email(t('form.emailInvalid')),
     password: z.string().min(1, t('form.passwordRequired')),
+    // Proxyman: "Remember me for 2 weeks".
+    remember_me: z.boolean(),
   });
 
   const form = useAppForm({
-    defaultValues: { email: '', password: '' } as LoginFormData,
+    defaultValues: {
+      email: '',
+      password: '',
+      remember_me: false,
+    } as LoginFormData,
     validationLogic: revalidateLogic(),
     validators: { onDynamic: loginSchema },
     onSubmit: ({ value }) => {
@@ -278,6 +288,17 @@ export function LoginForm({
                       }
                     />
                   }
+                />
+              )}
+            </form.AppField>
+
+            {/* Proxyman: "Remember me for 2 weeks". */}
+            <form.AppField name="remember_me">
+              {(field) => (
+                <RememberMeField
+                  checked={field.state.value}
+                  onCheckedChange={field.handleChange}
+                  disabled={busy}
                 />
               )}
             </form.AppField>

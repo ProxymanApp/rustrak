@@ -957,7 +957,8 @@ export const zLogVolumePoint = z.object({
 
 export const zLoginRequest = z.object({
     email: z.string(),
-    password: z.string()
+    password: z.string(),
+    remember_me: z.boolean().optional()
 });
 
 export const zManifestRequest = z.object({
@@ -1785,7 +1786,8 @@ export const zSessionSummary = z.object({
     crash_free_users_rate: z.number().nullable(),
     crashed: z.int(),
     errored: z.int(),
-    total: z.int()
+    total: z.int(),
+    users: z.int()
 });
 
 /**

@@ -17550,6 +17550,10 @@
           },
           "password": {
             "type": "string"
+          },
+          "remember_me": {
+            "type": "boolean",
+            "description": "Keep this session signed in for two weeks, however idle and across\nbrowser restarts. Off by default: the session then ends after a day\nwithout a request, or when the browser closes."
           }
         }
       },
@@ -19741,7 +19745,8 @@
           "abnormal",
           "crash_free_sessions_rate",
           "crash_free_users_rate",
-          "active_releases"
+          "active_releases",
+          "users"
         ],
         "properties": {
           "abnormal": {
@@ -19777,6 +19782,11 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          },
+          "users": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Distinct users (the sessions' `did`, which SDKs fill with a device's\ninstallation id when no user is set) seen in the window."
           }
         }
       },
