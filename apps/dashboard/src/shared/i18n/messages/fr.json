@@ -1,4 +1,13 @@
 {
+  "proxyman": {
+    "rememberMe": "Se souvenir de moi pendant 2 semaines",
+    "totalUsers": "Utilisateurs au total",
+    "uniqueDevices": "Appareils uniques sur le projet",
+    "uniqueDevicesIn": "Appareils uniques · {period}",
+    "windowLabel": "Période",
+    "loadFailed": "Impossible de charger les utilisateurs",
+    "noSessionsInPeriod": "Aucune session sur cette période"
+  },
   "locale": {
     "en": "English",
     "zh": "简体中文",

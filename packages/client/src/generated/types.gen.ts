@@ -1365,6 +1365,12 @@ export type LogVolumePoint = {
 export type LoginRequest = {
     email: string;
     password: string;
+    /**
+     * Keep this session signed in for two weeks, however idle and across
+     * browser restarts. Off by default: the session then ends after a day
+     * without a request, or when the browser closes.
+     */
+    remember_me?: boolean;
 };
 
 export type ManifestRequest = {
@@ -2268,6 +2274,11 @@ export type SessionSummary = {
     crashed: number;
     errored: number;
     total: number;
+    /**
+     * Distinct users (the sessions' `did`, which SDKs fill with a device's
+     * installation id when no user is set) seen in the window.
+     */
+    users: number;
 };
 
 /**
@@ -2279,6 +2290,17 @@ export type SessionTimeseriesPoint = {
     crash_free_sessions_rate: number | null;
     crashed: number;
     total: number;
+};
+
+/**
+ * How many distinct users sent sessions.
+ */
+export type SessionUsers = {
+    /**
+     * Distinct users (the sessions' `did`, which SDKs fill with a device's
+     * installation id when no user is set) seen in the window.
+     */
+    users: number;
 };
 
 /**
@@ -8046,6 +8068,51 @@ export type SessionsGetTimeseriesResponses = {
 };
 
 export type SessionsGetTimeseriesResponse = SessionsGetTimeseriesResponses[keyof SessionsGetTimeseriesResponses];
+
+export type SessionsGetUsersData = {
+    body?: never;
+    path: {
+        /**
+         * Project ID
+         */
+        project_id: number;
+    };
+    query?: {
+        /**
+         * Time window, e.g. '24h', '7d'. Omit for all time.
+         */
+        period?: string;
+        /**
+         * Only sessions from this environment. Omit for every environment.
+         */
+        environment?: string;
+        /**
+         * Only sessions from this release. Omit for every release.
+         */
+        release?: string;
+    };
+    url: '/api/projects/{project_id}/sessions/users';
+};
+
+export type SessionsGetUsersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SessionsGetUsersResponses = {
+    /**
+     * Distinct users of the project's sessions
+     */
+    200: SessionUsers;
+};
+
+export type SessionsGetUsersResponse = SessionsGetUsersResponses[keyof SessionsGetUsersResponses];
 
 export type SpansListData = {
     body?: never;

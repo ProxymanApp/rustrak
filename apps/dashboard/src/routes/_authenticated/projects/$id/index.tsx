@@ -26,6 +26,9 @@ import {
   heldReads,
   overviewReads,
 } from './-components/overview-reads';
+// Proxyman: the "Total users" card.
+import { TotalUsersKpi } from './-components/total-users-kpi';
+import { allTimeUsersRead } from './-components/total-users-read';
 
 interface OverviewSearch {
   period?: PeriodChoice;
@@ -76,6 +79,8 @@ export const Route = createFileRoute('/_authenticated/projects/$id/')({
     if (reads.previousEvents)
       void queryClient.query(reads.previousEvents).catch(noop);
     void queryClient.query(reads.issues('recent')).catch(noop);
+    // Proxyman: "Total users" opens on its all-time count.
+    void queryClient.query(allTimeUsersRead(filters)).catch(noop);
   },
   pendingComponent: ProjectLoading,
   component: ProjectPage,
@@ -167,7 +172,13 @@ function ProjectScreen({ project }: { project?: ProjectResponse }) {
       />
 
       <Page className="max-lg:flex-none max-lg:overflow-visible">
-        <KpiRow reads={reads} filters={filters} />
+        <KpiRow
+          reads={reads}
+          filters={filters}
+          extra={
+            <TotalUsersKpi reads={reads} filters={filters} held={!project} />
+          }
+        />
 
         {/* min-w-0 on every cell holding a chart: a grid item defaults to
             min-width:auto, so a chart's measured width can pin its column

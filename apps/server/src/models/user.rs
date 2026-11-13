@@ -82,6 +82,12 @@ pub struct ChangePasswordRequest {
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
+    /// Keep this session signed in for two weeks, however idle and across
+    /// browser restarts. Off by default: the session then ends after a day
+    /// without a request, or when the browser closes.
+    // Proxyman: src/auth/remember_me.rs.
+    #[serde(default)]
+    pub remember_me: bool,
 }
 
 impl User {

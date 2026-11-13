@@ -39,7 +39,8 @@ import { TransactionP95Bars } from './transaction-p95-bars';
  * could say while wrong.
  */
 /** One headline figure, how it moved, and its shape over the window. */
-function Kpi({
+// Proxyman: exported for `total-users-kpi.tsx`.
+export function Kpi({
   label,
   value,
   delta,
@@ -68,7 +69,8 @@ function Kpi({
   );
 }
 
-function KpiPlaceholder() {
+// Proxyman: exported for `total-users-kpi.tsx`.
+export function KpiPlaceholder() {
   return (
     <div className="h-[7.25rem] animate-pulse rounded-2xl border border-border-subtle bg-surface motion-reduce:animate-none" />
   );
@@ -78,24 +80,44 @@ function KpiPlaceholder() {
  * No sessions at all: two cards of dashes would weigh as much as the figures
  * beside them. One quiet note holds both places instead.
  */
-function NoSessionsNote() {
+// Proxyman: `windowed` says the note is about the page's period, not all
+// time: the "Total users" card beside it may be counting all time.
+function NoSessionsNote({ windowed = false }: { windowed?: boolean }) {
   const t = useTranslations('projectPages.overview');
+  const proxyman = useTranslations('proxyman');
   return (
     <div className="col-span-2 flex min-w-0 flex-col justify-center gap-1 rounded-2xl border border-dashed border-border-subtle px-4 py-3.5 sm:px-5">
       <span className="truncate text-meta text-fg-meta">
         {t('crashFreeSessions')} · {t('crashFreeUsers')}
       </span>
-      <span className="text-value text-fg-subtle">{t('noSessions')}</span>
+      <span className="text-value text-fg-subtle">
+        {windowed ? proxyman('noSessionsInPeriod') : t('noSessions')}
+      </span>
     </div>
   );
 }
 
+/*
+ * Proxyman: the row with `KpiRow`'s `extra` card (`TotalUsersKpi`), and that
+ * card's place in it. The card takes a row of its own under the four and
+ * joins theirs only from 1700 px: a fifth column any narrower pushes the
+ * crash-free sparkline out of its card. The ranges do not overlap, because
+ * Tailwind emits `min-[...]` before `xl:`. Change the two together.
+ */
+const ROW_WITH_EXTRA =
+  'grid grid-cols-2 gap-3 sm:gap-4 xl:max-[1700px]:grid-cols-4 min-[1700px]:grid-cols-5';
+const EXTRA_SLOT =
+  'col-span-2 grid xl:max-[1700px]:col-span-4 min-[1700px]:col-span-1';
+
 export function KpiRow({
   reads,
   filters,
+  extra,
 }: {
   reads: OverviewReads;
   filters: OverviewFilters;
+  /** Proxyman: one card appended to the row (`TotalUsersKpi`). */
+  extra?: ReactNode;
 }) {
   const t = useTranslations('projectPages.overview');
   const format = useFormatter();
@@ -126,7 +148,14 @@ export function KpiRow({
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+    // Proxyman: `ROW_WITH_EXTRA` when there is an `extra` card.
+    <div
+      className={
+        extra
+          ? ROW_WITH_EXTRA
+          : 'grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4'
+      }
+    >
       {summary.data ? (
         <>
           <Kpi
@@ -166,7 +195,7 @@ export function KpiRow({
       )}
 
       {health.data?.total === 0 ? (
-        <NoSessionsNote />
+        <NoSessionsNote windowed={filters.period !== undefined} />
       ) : health.data && trend.data ? (
         <>
           <Kpi
@@ -198,6 +227,7 @@ export function KpiRow({
           <KpiPlaceholder />
         </>
       )}
+      {extra ? <div className={EXTRA_SLOT}>{extra}</div> : null}
     </div>
   );
 }

@@ -28,6 +28,8 @@ pub mod release;
 pub mod role;
 pub mod scope;
 pub mod session;
+// Proxyman: the "Total users" count.
+pub mod session_users;
 pub mod source_bundle;
 pub mod sourcemap;
 pub mod sourcemap_store;

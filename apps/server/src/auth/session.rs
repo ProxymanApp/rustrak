@@ -12,6 +12,9 @@ pub(crate) const SESSION_USER_ID_KEY: &str = "user_id";
 /// sign-in is worthless after it (session fixation).
 pub fn set_user_session(session: &Session, user_id: i32) -> AppResult<()> {
     session.renew();
+    // Proxyman: a sign-in starts unremembered, whatever the session it
+    // rotates out of was (src/auth/remember_me.rs).
+    crate::auth::remember_me::forget(session);
     session
         .insert(SESSION_USER_ID_KEY, user_id)
         .map_err(|e| AppError::Internal(format!("Failed to set session: {}", e)))
